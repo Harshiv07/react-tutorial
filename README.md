@@ -1,68 +1,81 @@
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+# CarScore
 
-## Available Scripts
+A first-car comparison & scoring engine tuned for **Thunder Bay, ON**: a weighted
+14-column rubric (reliability, value, winter capability, fuel, resale, …) over a
+built-in database of the usual contenders — Toyota RAV4, Mazda CX-5, Honda CR-V,
+Subaru Forester, Toyota Corolla, Mazda3, and Hyundai Tucson / Kona / Elantra — with
+a hard **$30,000 CAD** budget ceiling.
 
-In the project directory, you can run:
+The leaderboard is seeded from real listings in `src/data/listings.json`, which a
+Node scraper can refresh from local dealers and aggregators. State persists in the
+browser via `localStorage`, so cars you add by hand survive reloads (and survive a
+re-scrape).
+
+## Scripts
 
 ### `npm start`
+Runs the app in development mode at [http://localhost:3000](http://localhost:3000).
 
-Runs the app in the development mode.<br />
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+### `npm run scrape`
+Refreshes `src/data/listings.json` by scraping used-vehicle inventory from:
 
-The page will reload if you make edits.<br />
-You will also see any lint errors in the console.
+| Source | Notes |
+| --- | --- |
+| Wayne Toyota (Thunder Bay) | dealer site |
+| Gore Motors Honda (Thunder Bay) | dealer site |
+| Half-Way Motors Mazda (Thunder Bay) | dealer site |
+| Superior Hyundai (Thunder Bay) | dealer site |
+| CarGurus.ca | best-effort — behind DataDome anti-bot |
+| Clutch.ca | best-effort — client-rendered |
 
-### `npm test`
+Each source is parsed with three fallback strategies (schema.org JSON-LD →
+embedded state blob → DOM card scan), normalized to CarScore's listing schema,
+and filtered to models the scorer knows. Listings that can't be mapped to a model
+in the database are dropped.
 
-Launches the test runner in the interactive watch mode.<br />
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+**Important caveats:**
+- Run it on a machine with **unrestricted outbound network**. Behind a corporate
+  or policy proxy (and in cloud CI), the dealer hosts return `403` and nothing is
+  scraped — in that case the script logs the block and **leaves the existing
+  `listings.json` untouched** rather than emptying it.
+- **CarGurus.ca / Clutch.ca are best-effort.** Their anti-bot / client-side
+  rendering usually returns nothing from a plain fetch; reliable coverage there
+  needs a residential proxy or a scraper API (ScrapingBee / Apify) in front.
+- Dealer sites change their markup over time, which can break an individual
+  parser. Sources are isolated, so one breakage never sinks the whole run. Parser
+  configs live in `scripts/scrapers/<source>.js`; shared logic is in `scripts/lib/`.
 
 ### `npm run build`
+Builds the production bundle to `build/`.
 
-Builds the app for production to the `build` folder.<br />
-It correctly bundles React in production mode and optimizes the build for the best performance.
+> **Node 17+ note:** react-scripts 3.4.1 uses an older webpack that trips OpenSSL 3.
+> If `npm start` / `npm run build` fails with `ERR_OSSL_EVP_UNSUPPORTED`, run with
+> `NODE_OPTIONS=--openssl-legacy-provider` (e.g.
+> `NODE_OPTIONS=--openssl-legacy-provider npm run build`).
 
-The build is minified and the filenames include the hashes.<br />
-Your app is ready to be deployed!
+### `npm run deploy`
+Builds and publishes `build/` to GitHub Pages.
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### `npm test`
+Runs the test runner in watch mode.
 
-### `npm run eject`
+## Project layout
 
-**Note: this is a one-way operation. Once you `eject`, you can’t go back!**
+```
+src/
+  CarScore.js          # the app: scoring engine, DB, leaderboard UI
+  data/listings.json   # leaderboard seed (refreshed by `npm run scrape`)
+  App.js               # renders <CarScore/>
+scripts/
+  scrape.js            # orchestrator: runs all sources, writes listings.json
+  scrapers/            # one config module per source (+ index registry)
+  lib/                 # fetch, extraction strategies, normalization helpers
+```
 
-If you aren’t satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
-
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you’re on your own.
-
-You don’t have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn’t feel obligated to use this feature. However we understand that this tool wouldn’t be useful if you couldn’t customize it when you are ready for it.
-
-## Learn More
-
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
-
-To learn React, check out the [React documentation](https://reactjs.org/).
-
-### Code Splitting
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/code-splitting
-
-### Analyzing the Bundle Size
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size
-
-### Making a Progressive Web App
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app
-
-### Advanced Configuration
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/advanced-configuration
-
-### Deployment
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/deployment
-
-### `npm run build` fails to minify
-
-This section has moved here: https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify
+## How scoring works
+Every column scores 1–5 and is multiplied by its weight (the three triple-weighted
+columns — reliability, value-per-cost, winter capability — drive the verdict).
+Value-per-cost is computed live from the listing's price vs a year- and
+km-adjusted market benchmark, so a good deal outscores the same model overpriced.
+Open any row on the leaderboard for the full breakdown, market read, and the
+model's known-problem notes.
