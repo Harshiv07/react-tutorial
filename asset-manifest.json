@@ -1,0 +1,13 @@
+{
+  "files": {
+    "main.css": "/car-score/static/css/main.7bd0c160.css",
+    "main.js": "/car-score/static/js/main.c3af5c5a.js",
+    "index.html": "/car-score/index.html",
+    "main.7bd0c160.css.map": "/car-score/static/css/main.7bd0c160.css.map",
+    "main.c3af5c5a.js.map": "/car-score/static/js/main.c3af5c5a.js.map"
+  },
+  "entrypoints": [
+    "static/css/main.7bd0c160.css",
+    "static/js/main.c3af5c5a.js"
+  ]
+}
