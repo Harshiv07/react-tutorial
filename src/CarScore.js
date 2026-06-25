@@ -233,13 +233,14 @@ function benchPrice(model, year) {
   if (year > yrs[yrs.length - 1]) return Math.round(m[yrs[yrs.length - 1]] * Math.pow(1.08, year - yrs[yrs.length - 1]));
   return m[yrs[0]];
 }
+const CURRENT_YEAR = new Date().getFullYear();
 function valueScore(price, model, year, km) {
   const bench = benchPrice(model, year);
   if (!bench || !price) return 3;
-  const age = Math.max(1, 2026 - year);
+  const age = Math.max(1, CURRENT_YEAR - year);
   const expectedKm = age * 18000;
   let kmAdj = 0;
-  if (km != null) kmAdj = ((km - expectedKm) / expectedKm) * 0.15; // up to ±15%
+  if (Number.isFinite(km)) kmAdj = ((km - expectedKm) / expectedKm) * 0.15; // up to ±15%
   const adjBench = bench * (1 + kmAdj);
   const ratio = price / adjBench; // <1 = below market = good
   if (ratio <= 0.88) return 5;
@@ -297,8 +298,9 @@ const KEY = "carscore:v1:cars";
 const SEED_HASH_KEY = "carscore:v1:seedhash";
 
 function scrapeId(c) {
+  // Full sanitized base (not truncated) so distinct listings can't collide.
   const base = c.vin || `${c.source}|${c.model}|${c.year}|${c.price}|${c.km ?? ""}|${c.trim ?? ""}`;
-  return "scrape_" + String(base).replace(/[^a-zA-Z0-9]/g, "").slice(0, 48);
+  return "scrape_" + String(base).replace(/[^a-zA-Z0-9]/g, "");
 }
 function hashListings(list) {
   const s = JSON.stringify(list);
@@ -403,11 +405,11 @@ export default function CarScore() {
     if (!form.year || !form.price) return;
     const entry = {
       ...form,
-      id: editId || `car_${Date.now()}`,
+      id: editId || `car_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       year: parseInt(form.year, 10),
-      price: parseInt(String(form.price).replace(/[^\d]/g, ""), 10),
-      km: form.km ? parseInt(String(form.km).replace(/[^\d]/g, ""), 10) : null,
-      warrantyMonths: form.warrantyMonths ? parseInt(form.warrantyMonths, 10) : null,
+      price: parseInt(String(form.price).replace(/[^\d]/g, ""), 10) || 0,
+      km: form.km ? (parseInt(String(form.km).replace(/[^\d]/g, ""), 10) || null) : null,
+      warrantyMonths: form.warrantyMonths ? (parseInt(form.warrantyMonths, 10) || null) : null,
     };
     setCars((prev) => editId ? prev.map((c) => c.id === editId ? entry : c) : [...prev, entry]);
     setForm(BLANK_FORM); setEditId(null); setTab("leaderboard");
