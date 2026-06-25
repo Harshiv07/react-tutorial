@@ -110,10 +110,12 @@ function pick(o, names) {
 function extractStateBlob(html) {
   const blobs = [];
   const patterns = [
-    /__NEXT_DATA__\s*=\s*({[\s\S]*?})\s*<\/script>/,
-    /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
-    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?});?\s*<\/script>/,
-    /dataLayer\s*=\s*(\[[\s\S]*?\]);/,
+    // Next.js embeds pure JSON in a script tag, not an assignment.
+    /<script[^>]*\bid=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/,
+    /window\.__NEXT_DATA__\s*=\s*({[\s\S]*?})\s*;?\s*<\/script>/,
+    /window\.__INITIAL_STATE__\s*=\s*({[\s\S]*?})\s*;?\s*<\/script>/,
+    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?})\s*;?\s*<\/script>/,
+    /dataLayer\s*=\s*(\[[\s\S]*?\])\s*;/,
   ];
   for (const re of patterns) {
     const m = html.match(re);

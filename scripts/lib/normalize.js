@@ -102,7 +102,9 @@ function makeListing(raw, meta) {
   const km = parseKm(raw.km != null ? raw.km : title) ?? null;
   let drivetrain = detectDrivetrain(`${title} ${raw.drivetrain || ""} ${raw.trim || ""}`);
   const driveUnknown = drivetrain == null;
-  if (drivetrain == null) drivetrain = "FWD"; // conservative; flagged in note below
+  // Don't guess FWD — that penalizes the awd score. "Unknown" lets the scorer
+  // fall back to the model's default capability; the note flags it for the user.
+  if (drivetrain == null) drivetrain = "Unknown";
 
   const cpo = detectCpo(`${title} ${raw.cpo ? "certified" : ""}`);
   const vin = cleanVin(raw.vin) || null;
