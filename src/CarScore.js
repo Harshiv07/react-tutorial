@@ -9,36 +9,25 @@ import LISTINGS from "./data/listings.json";
    - Persistent storage (localStorage) so the leaderboard survives sessions
    - Live re-ranking every time a car is added
    - Leaderboard seeds from src/data/listings.json, refreshed by `npm run scrape`
-     (scrapes Wayne Toyota, Gore Motors Honda, Half-Way Motors Mazda,
-      Superior Hyundai + best-effort CarGurus.ca / Clutch.ca)
-   - New / CPO reference panel for RAV4, CX-5, CR-V (2026 CAD data)
+   - Dark / light mode toggle (preference saved to localStorage)
    ========================================================================= */
 
-/* ---------- DESIGN TOKENS ---------- */
 const FONTS = `
 @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@500;700&display=swap');
 `;
 
 const C = {
-  base: "#0E1620",
-  panel: "#16212E",
-  panel2: "#1D2A3A",
-  line: "#2A3A4D",
-  frost: "#EAF1F7",
-  mute: "#8A9BB0",
-  cyan: "#3FD0E0",
-  cyanDim: "#1B6E78",
-  amber: "#E9B949",
-  green: "#5BD89A",
-  red: "#E97171",
-  gold: "#D7B26A",
+  base: "#0E1620", panel: "#16212E", panel2: "#1D2A3A", line: "#2A3A4D",
+  frost: "#EAF1F7", mute: "#8A9BB0", cyan: "#3FD0E0", cyanDim: "#1B6E78",
+  amber: "#E9B949", green: "#5BD89A", red: "#E97171", gold: "#D7B26A",
 };
 
-/* ---------- MODEL DATABASE ----------
-   Hard columns auto-filled per model. Scores are 1-5 on the playbook rubric.
-   fuel = combined L/100km (used-gen, AWD where relevant).
-   These reflect the 2018-2021 used generations in the playbook.
-*/
+const CL = {
+  base: "#F0F4FA", panel: "#FFFFFF", panel2: "#E8EEF6", line: "#C5D3E2",
+  frost: "#0E1620", mute: "#5A6E85", cyan: "#3FD0E0", cyanDim: "#1B6E78",
+  amber: "#C97A00", green: "#0D8A5A", red: "#C0392B", gold: "#9B6E20",
+};
+
 const DB = {
   "Toyota RAV4": {
     body: "Compact SUV", awd: "Optional AWD", awdScore: 4,
@@ -134,13 +123,10 @@ const DB = {
 
 const MODEL_LIST = Object.keys(DB);
 
-/* Empty add/edit form. Module-level so its reference is stable across renders. */
 const BLANK_FORM = { model: MODEL_LIST[0], year: "", price: "", km: "", drivetrain: "AWD", vin: "", cpo: false, source: "", location: "", warrantyMonths: "" };
 
-/* Hard budget ceiling. Cars above this are flagged and can't reach "Strong buy". */
 const BUDGET = 30000;
 
-/* Which used year/trim of each model reliably lands under $30K CAD. */
 const UNDER_BUDGET = {
   "Toyota RAV4": "2018–2020 LE/XLE AWD all fit; even 2020 XLE AWD averages ~$29.5K.",
   "Mazda CX-5": "Every 2018–2021 GS/GT AWD fits comfortably (~$20–26K) — most headroom.",
@@ -153,7 +139,6 @@ const UNDER_BUDGET = {
   "Hyundai Elantra": "Any 2018–2021 fits with huge room (~$14–19K).",
 };
 
-/* ---------- NEW / CPO REFERENCE (2026 CAD) ---------- */
 const NEWCPO = [
   {
     model: "Toyota RAV4",
@@ -184,15 +169,13 @@ const NEWCPO = [
   },
 ];
 
-/* ---------- SCORING ENGINE ---------- */
 const WEIGHTS = {
   reliability: 3, value: 3, winter: 3,
   maint: 2, fuel: 2, resale: 2, insure: 2, safety: 2, awd: 2,
   engine: 1, cargo: 1, problems: 1, parts: 1, warranty: 1,
 };
-const MAX_SCORE = Object.values(WEIGHTS).reduce((a, b) => a + b, 0) * 5; // 125
+const MAX_SCORE = Object.values(WEIGHTS).reduce((a, b) => a + b, 0) * 5;
 
-// fuel -> 1-5 (lower combined L/100km is better)
 function fuelScore(comb) {
   if (comb == null) return 3;
   if (comb < 7.5) return 5;
@@ -201,7 +184,6 @@ function fuelScore(comb) {
   if (comb < 11) return 2;
   return 1;
 }
-// maintenance annual $ -> 1-5
 function maintScore(annual) {
   if (annual == null) return 3;
   if (annual < 450) return 5;
@@ -211,24 +193,22 @@ function maintScore(annual) {
   return 1;
 }
 
-/* value-per-cost: compare price to a model+year market benchmark. */
 const BENCH = {
-  "Toyota RAV4":   { 2018: 23500, 2019: 28400, 2020: 29500 },
-  "Mazda CX-5":    { 2018: 20500, 2019: 22000, 2020: 24000 },
-  "Honda CR-V":    { 2018: 23000, 2019: 25500, 2020: 27000 },
-  "Subaru Forester":{2018: 20000, 2019: 22000, 2020: 24600 },
-  "Toyota Corolla":{ 2018: 17500, 2019: 18800, 2020: 20000 },
-  "Mazda3":        { 2018: 17000, 2019: 18300, 2020: 19300 },
-  "Hyundai Tucson":{ 2018: 18000, 2019: 20000, 2020: 22500 },
-  "Hyundai Kona":  { 2018: 17500, 2019: 19000, 2020: 21000 },
-  "Hyundai Elantra":{2018: 14500, 2019: 16000, 2020: 17500 },
+  "Toyota RAV4":    { 2018: 23500, 2019: 28400, 2020: 29500 },
+  "Mazda CX-5":     { 2018: 20500, 2019: 22000, 2020: 24000 },
+  "Honda CR-V":     { 2018: 23000, 2019: 25500, 2020: 27000 },
+  "Subaru Forester":{ 2018: 20000, 2019: 22000, 2020: 24600 },
+  "Toyota Corolla": { 2018: 17500, 2019: 18800, 2020: 20000 },
+  "Mazda3":         { 2018: 17000, 2019: 18300, 2020: 19300 },
+  "Hyundai Tucson": { 2018: 18000, 2019: 20000, 2020: 22500 },
+  "Hyundai Kona":   { 2018: 17500, 2019: 19000, 2020: 21000 },
+  "Hyundai Elantra":{ 2018: 14500, 2019: 16000, 2020: 17500 },
 };
 function benchPrice(model, year) {
   const m = BENCH[model];
   if (!m) return null;
   if (m[year]) return m[year];
   const yrs = Object.keys(m).map(Number).sort((a, b) => a - b);
-  // extrapolate ~7%/yr outside the table
   if (year < yrs[0]) return Math.round(m[yrs[0]] * Math.pow(0.92, yrs[0] - year));
   if (year > yrs[yrs.length - 1]) return Math.round(m[yrs[yrs.length - 1]] * Math.pow(1.08, year - yrs[yrs.length - 1]));
   return m[yrs[0]];
@@ -240,16 +220,15 @@ function valueScore(price, model, year, km) {
   const age = Math.max(1, CURRENT_YEAR - year);
   const expectedKm = age * 18000;
   let kmAdj = 0;
-  if (Number.isFinite(km)) kmAdj = ((km - expectedKm) / expectedKm) * 0.15; // up to ±15%
+  if (Number.isFinite(km)) kmAdj = ((km - expectedKm) / expectedKm) * 0.15;
   const adjBench = bench * (1 + kmAdj);
-  const ratio = price / adjBench; // <1 = below market = good
+  const ratio = price / adjBench;
   if (ratio <= 0.88) return 5;
   if (ratio <= 0.96) return 4;
   if (ratio <= 1.05) return 3;
   if (ratio <= 1.15) return 2;
   return 1;
 }
-// winter = blend of AWD capability + body height + heated kit assumption
 function winterScore(d) {
   let s = d.awdScore;
   if (d.body === "Compact SUV") s = Math.min(5, s + 0.5);
@@ -288,17 +267,10 @@ function verdict(total, overBudget) {
   return { label: "Walk away", color: C.red };
 }
 
-/* ---------- STORAGE (localStorage) ----------
-   The leaderboard seeds from src/data/listings.json (refreshed by `npm run
-   scrape`). We tag the seed with a hash of that file: when a fresh scrape
-   changes it, scraped cars are re-merged in place while any cars the user
-   added by hand (ids starting `car_`) are preserved.
-*/
 const KEY = "carscore:v1:cars";
 const SEED_HASH_KEY = "carscore:v1:seedhash";
 
 function scrapeId(c) {
-  // Full sanitized base (not truncated) so distinct listings can't collide.
   const base = c.vin || `${c.source}|${c.model}|${c.year}|${c.price}|${c.km ?? ""}|${c.trim ?? ""}`;
   return "scrape_" + String(base).replace(/[^a-zA-Z0-9]/g, "");
 }
@@ -325,7 +297,6 @@ function loadCars() {
   let prevHash = null;
   try { prevHash = localStorage.getItem(SEED_HASH_KEY); } catch { /* noop */ }
 
-  // First ever run: seed from listings.json.
   if (!stored.length && prevHash == null) {
     const seeded = seedEntries();
     saveCars(seeded);
@@ -333,7 +304,6 @@ function loadCars() {
     return seeded;
   }
 
-  // Fresh scrape detected: re-merge scraped cars, keep user-added ones.
   if (prevHash !== currentHash) {
     const userAdded = stored.filter((c) => !String(c.id).startsWith("scrape_"));
     const merged = [...seedEntries(), ...userAdded];
@@ -345,7 +315,6 @@ function loadCars() {
   return stored;
 }
 
-/* ---------- SMALL UI ATOMS ---------- */
 function Pill({ children, color = C.cyan, bg }) {
   return (
     <span style={{
@@ -356,14 +325,15 @@ function Pill({ children, color = C.cyan, bg }) {
     }}>{children}</span>
   );
 }
-function ScoreBar({ value, weight }) {
+
+function ScoreBar({ value, weight, theme = C }) {
   const pct = (value / 5) * 100;
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-      <div style={{ flex: 1, height: 6, background: C.line, borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: value >= 4 ? C.green : value >= 3 ? C.cyan : C.amber }} />
+      <div style={{ flex: 1, height: 6, background: theme.line, borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ width: `${pct}%`, height: "100%", background: value >= 4 ? theme.green : value >= 3 ? theme.cyan : theme.amber }} />
       </div>
-      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: C.mute, width: 38 }}>
+      <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.mute, width: 38 }}>
         {value}×{weight}
       </span>
     </div>
@@ -378,19 +348,27 @@ const FIELD_LABELS = {
   parts: "Parts (Canada)", warranty: "Warranty (CPO)",
 };
 
-/* =========================================================================
-   MAIN
-   ========================================================================= */
 export default function CarScore() {
   const [cars, setCars] = useState([]);
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState("leaderboard");
   const [expanded, setExpanded] = useState(null);
   const [showRef, setShowRef] = useState(false);
+  const [darkMode, setDarkMode] = useState(() => {
+    try { const s = localStorage.getItem("carscore:v1:theme"); return s === "light" ? false : true; }
+    catch { return true; }
+  });
 
-  // form
+  const T = darkMode ? C : CL;
+
   const [form, setForm] = useState(BLANK_FORM);
   const [editId, setEditId] = useState(null);
+
+  const toggleDark = () => setDarkMode((d) => {
+    const n = !d;
+    try { localStorage.setItem("carscore:v1:theme", n ? "dark" : "light"); } catch { /* noop */ }
+    return n;
+  });
 
   useEffect(() => { setCars(loadCars()); setLoaded(true); }, []);
   useEffect(() => { if (loaded) saveCars(cars); }, [cars, loaded]);
@@ -428,40 +406,57 @@ export default function CarScore() {
 
   const inputStyle = {
     width: "100%", padding: "10px 12px", borderRadius: 8, boxSizing: "border-box",
-    background: C.panel2, color: C.frost, border: `1px solid ${C.line}`,
+    background: T.panel2, color: T.frost, border: `1px solid ${T.line}`,
     fontFamily: "'Inter', sans-serif", fontSize: 14, outline: "none",
   };
-  const labelStyle = { display: "block", fontSize: 11, fontWeight: 600, color: C.mute, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 };
+  const labelStyle = {
+    display: "block", fontSize: 11, fontWeight: 600, color: T.mute,
+    marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5,
+  };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.base, color: C.frost, fontFamily: "'Inter', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: T.base, color: T.frost, fontFamily: "'Inter', sans-serif" }}>
       <style>{FONTS}{`
         * { -webkit-tap-highlight-color: transparent; }
-        button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid ${C.cyan}; outline-offset: 1px; }
+        button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid ${T.cyan}; outline-offset: 1px; }
         @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
-        .cs-row { transition: background 0.15s ease, transform 0.15s ease; }
-        .cs-row:hover { background: ${C.panel2}; }
-        select option { background: ${C.panel}; }
+        .cs-row { transition: background 0.15s ease; }
+        .cs-row:hover { background: ${T.panel2}; }
+        select option { background: ${T.panel}; }
+        a { color: ${T.cyan}; }
       `}</style>
 
       {/* HEADER */}
-      <div style={{ borderBottom: `1px solid ${C.line}`, background: `linear-gradient(180deg, ${C.panel} 0%, ${C.base} 100%)` }}>
+      <div style={{ borderBottom: `1px solid ${T.line}`, background: darkMode ? `linear-gradient(180deg, ${T.panel} 0%, ${T.base} 100%)` : T.panel }}>
         <div style={{ maxWidth: 920, margin: "0 auto", padding: "22px 20px 18px" }}>
-          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
             <div>
               <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 26, letterSpacing: -0.5 }}>
-                Car<span style={{ color: C.cyan }}>Score</span>
+                Car<span style={{ color: T.cyan }}>Score</span>
               </div>
-              <div style={{ fontSize: 12.5, color: C.mute, marginTop: 2 }}>
+              <div style={{ fontSize: 12.5, color: T.mute, marginTop: 2 }}>
                 Thunder Bay first-car engine · 14-column scoring · $30K CAD ceiling
               </div>
             </div>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: C.mute }}>
-                {cars.length} car{cars.length === 1 ? "" : "s"} tracked
-              </div>
-              <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: C.cyanDim }}>
-                max score {MAX_SCORE}
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button
+                onClick={toggleDark}
+                title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
+                style={{
+                  padding: "7px 13px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
+                  border: `1px solid ${T.line}`, background: T.panel2, color: T.frost,
+                  fontFamily: "'Inter', sans-serif", lineHeight: 1,
+                }}
+              >
+                {darkMode ? "☀ Light" : "☾ Dark"}
+              </button>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 12, color: T.mute }}>
+                  {cars.length} car{cars.length === 1 ? "" : "s"} tracked
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: T.cyanDim }}>
+                  max score {MAX_SCORE}
+                </div>
               </div>
             </div>
           </div>
@@ -471,9 +466,9 @@ export default function CarScore() {
             {[["leaderboard", "Leaderboard"], ["add", editId ? "Edit car" : "Add car"], ["method", "Scoring"]].map(([k, label]) => (
               <button key={k} onClick={() => setTab(k)} style={{
                 padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 13, fontWeight: 600,
-                border: `1px solid ${tab === k ? C.cyan : C.line}`,
+                border: `1px solid ${tab === k ? T.cyan : T.line}`,
                 background: tab === k ? "rgba(63,208,224,0.12)" : "transparent",
-                color: tab === k ? C.cyan : C.mute, fontFamily: "'Inter', sans-serif",
+                color: tab === k ? T.cyan : T.mute, fontFamily: "'Inter', sans-serif",
               }}>{label}</button>
             ))}
           </div>
@@ -486,18 +481,17 @@ export default function CarScore() {
         {tab === "leaderboard" && (
           <>
             {ranked.length === 0 ? (
-              <div style={{ textAlign: "center", padding: "60px 20px", border: `1px dashed ${C.line}`, borderRadius: 12, background: C.panel }}>
+              <div style={{ textAlign: "center", padding: "60px 20px", border: `1px dashed ${T.line}`, borderRadius: 12, background: T.panel }}>
                 <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 18, fontWeight: 600, marginBottom: 8 }}>
                   No cars yet
                 </div>
-                <div style={{ color: C.mute, fontSize: 14, maxWidth: 440, margin: "0 auto 18px" }}>
-                  Run <code style={{ color: C.cyan }}>npm run scrape</code> to pull live listings from the Thunder Bay
-                  dealers, or add one yourself: enter price, year, model, km and drivetrain, and the hard columns
-                  (reliability, fuel, resale, maintenance) auto-fill from the built-in database.
+                <div style={{ color: T.mute, fontSize: 14, maxWidth: 440, margin: "0 auto 18px" }}>
+                  Run <code style={{ color: T.cyan }}>npm run scrape</code> to pull live listings from the Thunder Bay
+                  dealers, or add one yourself.
                 </div>
                 <button onClick={() => setTab("add")} style={{
                   padding: "11px 20px", borderRadius: 9, cursor: "pointer", fontSize: 14, fontWeight: 700,
-                  background: C.cyan, color: C.base, border: "none", fontFamily: "'Inter', sans-serif",
+                  background: T.cyan, color: T.base, border: "none", fontFamily: "'Inter', sans-serif",
                 }}>Add first car</button>
               </div>
             ) : (
@@ -507,16 +501,25 @@ export default function CarScore() {
                   const d = DB[car.model];
                   const bench = benchPrice(car.model, car.year);
                   const isOpen = expanded === car.id;
+                  const age = Math.max(1, CURRENT_YEAR - car.year);
+                  const kmPerYear = car.km != null ? Math.round(car.km / age) : null;
+                  const kmTag = kmPerYear == null ? null
+                    : kmPerYear < 12000
+                      ? { label: `${kmPerYear.toLocaleString()} km/yr ✓`, color: T.green }
+                      : kmPerYear < 18000
+                        ? { label: `${kmPerYear.toLocaleString()} km/yr`, color: T.mute }
+                        : { label: `${kmPerYear.toLocaleString()} km/yr ↑`, color: T.amber };
+
                   return (
                     <div key={car.id} className="cs-row" style={{
-                      border: `1px solid ${i === 0 ? C.cyan + "66" : C.line}`, borderRadius: 12,
-                      background: i === 0 ? "linear-gradient(180deg, rgba(63,208,224,0.06), " + C.panel + ")" : C.panel,
+                      border: `1px solid ${i === 0 ? T.cyan + "66" : T.line}`, borderRadius: 12,
+                      background: i === 0 ? `linear-gradient(180deg, rgba(63,208,224,0.06), ${T.panel})` : T.panel,
                       overflow: "hidden",
                     }}>
                       <div onClick={() => setExpanded(isOpen ? null : car.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", cursor: "pointer" }}>
                         {/* rank */}
                         <div style={{ width: 30, textAlign: "center", flexShrink: 0 }}>
-                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 20, color: i === 0 ? C.cyan : C.mute }}>
+                          <div style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 20, color: i === 0 ? T.cyan : T.mute }}>
                             {i + 1}
                           </div>
                         </div>
@@ -526,12 +529,42 @@ export default function CarScore() {
                             <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 16 }}>
                               {car.year} {car.model}
                             </span>
-                            {car.cpo && <Pill color={C.gold} bg="rgba(215,178,106,0.12)">CPO</Pill>}
-                            <Pill color={car.drivetrain === "AWD" ? C.cyan : C.mute}>{car.drivetrain}</Pill>
-                            {car.overBudget && <Pill color={C.amber} bg="rgba(233,185,73,0.12)">OVER $30K</Pill>}
+                            {car.cpo && <Pill color={T.gold} bg="rgba(215,178,106,0.12)">CPO</Pill>}
+                            <Pill color={car.drivetrain === "AWD" ? T.cyan : T.mute}>{car.drivetrain}</Pill>
+                            {car.overBudget && <Pill color={T.amber} bg="rgba(233,185,73,0.12)">OVER $30K</Pill>}
+                            {car.url && (
+                              <a
+                                href={car.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                onClick={(e) => e.stopPropagation()}
+                                style={{ fontSize: 11.5, color: T.cyan, textDecoration: "none", fontFamily: "'JetBrains Mono', monospace", opacity: 0.85 }}
+                                title="Open source listing"
+                              >
+                                ↗ listing
+                              </a>
+                            )}
                           </div>
-                          <div style={{ fontSize: 12.5, color: C.mute, marginTop: 3, fontFamily: "'JetBrains Mono', monospace" }}>
-                            ${car.price.toLocaleString()}{car.km ? ` · ${car.km.toLocaleString()} km` : ""}{car.location ? ` · ${car.location}` : ""}
+                          <div style={{ fontSize: 12.5, color: T.mute, marginTop: 4, fontFamily: "'JetBrains Mono', monospace", display: "flex", flexWrap: "wrap", gap: "0 6px" }}>
+                            <span>${car.price.toLocaleString()}</span>
+                            {car.km != null && (
+                              <>
+                                <span style={{ color: T.line }}>·</span>
+                                <span>{car.km.toLocaleString()} km</span>
+                              </>
+                            )}
+                            {kmTag && (
+                              <>
+                                <span style={{ color: T.line }}>·</span>
+                                <span style={{ color: kmTag.color }}>{kmTag.label}</span>
+                              </>
+                            )}
+                            {car.location && (
+                              <>
+                                <span style={{ color: T.line }}>·</span>
+                                <span>{car.location}</span>
+                              </>
+                            )}
                           </div>
                         </div>
                         {/* score */}
@@ -544,57 +577,70 @@ export default function CarScore() {
                       </div>
 
                       {isOpen && (
-                        <div style={{ borderTop: `1px solid ${C.line}`, padding: "16px", background: C.base }}>
-                          {/* deal read */}
+                        <div style={{ borderTop: `1px solid ${T.line}`, padding: "16px", background: T.base }}>
                           {bench && (
-                            <div style={{ marginBottom: 14, fontSize: 13, color: C.frost }}>
-                              <span style={{ color: C.mute }}>Market benchmark for {car.year} {car.model}: </span>
+                            <div style={{ marginBottom: 14, fontSize: 13, color: T.frost }}>
+                              <span style={{ color: T.mute }}>Market benchmark for {car.year} {car.model}: </span>
                               <span style={{ fontFamily: "'JetBrains Mono', monospace" }}>${bench.toLocaleString()}</span>
-                              <span style={{ color: car.price <= bench ? C.green : C.amber, marginLeft: 8, fontWeight: 600 }}>
+                              <span style={{ color: car.price <= bench ? T.green : T.amber, marginLeft: 8, fontWeight: 600 }}>
                                 {car.price <= bench ? `↓ $${(bench - car.price).toLocaleString()} below` : `↑ $${(car.price - bench).toLocaleString()} above`}
                               </span>
                             </div>
                           )}
-                          {/* budget read */}
                           <div style={{ marginBottom: 14, fontSize: 13 }}>
-                            <span style={{ color: C.mute }}>Budget ($30K): </span>
-                            <span style={{ color: car.overBudget ? C.amber : C.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
+                            <span style={{ color: T.mute }}>Budget ($30K): </span>
+                            <span style={{ color: car.overBudget ? T.amber : T.green, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>
                               {car.overBudget
                                 ? `$${(car.price - BUDGET).toLocaleString()} over`
                                 : `$${(BUDGET - car.price).toLocaleString()} headroom`}
                             </span>
-                            <span style={{ color: C.mute }}> · {UNDER_BUDGET[car.model]}</span>
+                            <span style={{ color: T.mute }}> · {UNDER_BUDGET[car.model]}</span>
                           </div>
+                          {kmTag && (
+                            <div style={{ marginBottom: 14, fontSize: 13 }}>
+                              <span style={{ color: T.mute }}>Mileage: </span>
+                              <span style={{ fontFamily: "'JetBrains Mono', monospace", color: T.frost }}>{car.km.toLocaleString()} km total</span>
+                              <span style={{ color: T.mute }}> · </span>
+                              <span style={{ color: kmTag.color, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace" }}>{kmTag.label}</span>
+                              <span style={{ color: T.mute, fontSize: 12 }}>
+                                {" "}({kmPerYear < 12000 ? "low — good buy signal" : kmPerYear < 18000 ? "average use" : "high — inspect carefully"})
+                              </span>
+                            </div>
+                          )}
                           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px 22px" }}>
                             {Object.keys(WEIGHTS).map((k) => (
                               <div key={k}>
                                 <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
-                                  <span style={{ fontSize: 11.5, color: C.frost, fontWeight: WEIGHTS[k] === 3 ? 700 : 500 }}>
+                                  <span style={{ fontSize: 11.5, color: T.frost, fontWeight: WEIGHTS[k] === 3 ? 700 : 500 }}>
                                     {FIELD_LABELS[k]}{WEIGHTS[k] === 3 ? " ◆" : ""}
                                   </span>
                                 </div>
-                                <ScoreBar value={car.breakdown[k]} weight={WEIGHTS[k]} />
+                                <ScoreBar value={car.breakdown[k]} weight={WEIGHTS[k]} theme={T} />
                               </div>
                             ))}
                           </div>
-                          {/* engine + problems */}
-                          <div style={{ marginTop: 14, fontSize: 12.5, color: C.mute, lineHeight: 1.6 }}>
-                            <div><span style={{ color: C.frost, fontWeight: 600 }}>Engine: </span>{d.engine}</div>
-                            <div style={{ marginTop: 4 }}><span style={{ color: C.amber, fontWeight: 600 }}>Watch: </span>{d.problems}</div>
-                            {car.note && <div style={{ marginTop: 4 }}><span style={{ color: C.cyan, fontWeight: 600 }}>Listing: </span>{car.trim && car.trim !== "—" ? car.trim + " — " : ""}{car.note}</div>}
-                            {car.url && <div style={{ marginTop: 4 }}><a href={car.url} target="_blank" rel="noopener noreferrer" style={{ color: C.cyan }}>View listing ↗</a></div>}
-                            {car.vin && <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}><span style={{ color: C.frost }}>VIN: </span>{car.vin}</div>}
-                            {car.source && <div style={{ marginTop: 4 }}><span style={{ color: C.frost }}>Source: </span>{car.source}{car.location ? ` · ${car.location}` : ""}</div>}
+                          <div style={{ marginTop: 14, fontSize: 12.5, color: T.mute, lineHeight: 1.6 }}>
+                            <div><span style={{ color: T.frost, fontWeight: 600 }}>Engine: </span>{d.engine}</div>
+                            <div style={{ marginTop: 4 }}><span style={{ color: T.amber, fontWeight: 600 }}>Watch: </span>{d.problems}</div>
+                            {car.note && <div style={{ marginTop: 4 }}><span style={{ color: T.cyan, fontWeight: 600 }}>Listing: </span>{car.trim && car.trim !== "—" ? car.trim + " — " : ""}{car.note}</div>}
+                            {car.url && (
+                              <div style={{ marginTop: 6 }}>
+                                <a href={car.url} target="_blank" rel="noopener noreferrer" style={{ color: T.cyan, fontWeight: 600 }}>
+                                  View original listing ↗
+                                </a>
+                              </div>
+                            )}
+                            {car.vin && <div style={{ marginTop: 4, fontFamily: "'JetBrains Mono', monospace" }}><span style={{ color: T.frost }}>VIN: </span>{car.vin}</div>}
+                            {car.source && <div style={{ marginTop: 4 }}><span style={{ color: T.frost }}>Source: </span>{car.source}{car.location ? ` · ${car.location}` : ""}</div>}
                           </div>
-                          {/* actions */}
                           <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
                             <button onClick={(e) => { e.stopPropagation(); edit(car); }} style={{
                               padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600,
-                              background: "transparent", color: C.cyan, border: `1px solid ${C.cyan}55`, fontFamily: "'Inter', sans-serif",
+                              background: "transparent", color: T.cyan, border: `1px solid ${T.cyan}55`, fontFamily: "'Inter', sans-serif",
                             }}>Edit</button>
                             <button onClick={(e) => { e.stopPropagation(); remove(car.id); }} style={{
                               padding: "8px 14px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600,
-                              background: "transparent", color: C.red, border: `1px solid ${C.red}44`, fontFamily: "'Inter', sans-serif",
+                              background: "transparent", color: T.red, border: `1px solid ${T.red}44`, fontFamily: "'Inter', sans-serif",
                             }}>Remove</button>
                           </div>
                         </div>
@@ -609,29 +655,29 @@ export default function CarScore() {
             <div style={{ marginTop: 22 }}>
               <button onClick={() => setShowRef(!showRef)} style={{
                 width: "100%", textAlign: "left", padding: "12px 16px", borderRadius: 10, cursor: "pointer",
-                background: C.panel, border: `1px solid ${C.line}`, color: C.frost, fontFamily: "'Inter', sans-serif",
+                background: T.panel, border: `1px solid ${T.line}`, color: T.frost, fontFamily: "'Inter', sans-serif",
                 display: "flex", justifyContent: "space-between", alignItems: "center",
               }}>
-                <span style={{ fontWeight: 600, fontSize: 14 }}>New / CPO reference — RAV4 · CX-5 · CR-V <span style={{ color: C.mute, fontWeight: 400 }}>(2026 CAD)</span></span>
-                <span style={{ color: C.cyan, fontSize: 18 }}>{showRef ? "−" : "+"}</span>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>New / CPO reference — RAV4 · CX-5 · CR-V <span style={{ color: T.mute, fontWeight: 400 }}>(2026 CAD)</span></span>
+                <span style={{ color: T.cyan, fontSize: 18 }}>{showRef ? "−" : "+"}</span>
               </button>
               {showRef && (
                 <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}>
                   {NEWCPO.map((r) => (
-                    <div key={r.model} style={{ border: `1px solid ${C.line}`, borderRadius: 10, padding: 16, background: C.panel }}>
+                    <div key={r.model} style={{ border: `1px solid ${T.line}`, borderRadius: 10, padding: 16, background: T.panel }}>
                       <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 15, marginBottom: 8 }}>{r.model}</div>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
-                        <Pill color={C.green} bg="rgba(91,216,154,0.10)">NEW {r.newRange}</Pill>
-                        <Pill color={C.gold} bg="rgba(215,178,106,0.10)">{r.cpoRange}</Pill>
+                        <Pill color={T.green} bg="rgba(91,216,154,0.10)">NEW {r.newRange}</Pill>
+                        <Pill color={T.gold} bg="rgba(215,178,106,0.10)">{r.cpoRange}</Pill>
                       </div>
-                      <div style={{ fontSize: 12.5, color: C.frost, lineHeight: 1.6 }}>
-                        <div><span style={{ color: C.green, fontWeight: 600 }}>New: </span>{r.newNote} {r.newDetail}</div>
-                        <div style={{ marginTop: 6 }}><span style={{ color: C.gold, fontWeight: 600 }}>CPO: </span>{r.cpoNote}</div>
-                        <div style={{ marginTop: 6, color: C.cyan }}><span style={{ fontWeight: 600 }}>Verdict: </span>{r.worth}</div>
+                      <div style={{ fontSize: 12.5, color: T.frost, lineHeight: 1.6 }}>
+                        <div><span style={{ color: T.green, fontWeight: 600 }}>New: </span>{r.newNote} {r.newDetail}</div>
+                        <div style={{ marginTop: 6 }}><span style={{ color: T.gold, fontWeight: 600 }}>CPO: </span>{r.cpoNote}</div>
+                        <div style={{ marginTop: 6, color: T.cyan }}><span style={{ fontWeight: 600 }}>Verdict: </span>{r.worth}</div>
                       </div>
                     </div>
                   ))}
-                  <div style={{ fontSize: 11.5, color: C.mute, lineHeight: 1.5, padding: "4px 2px" }}>
+                  <div style={{ fontSize: 11.5, color: T.mute, lineHeight: 1.5, padding: "4px 2px" }}>
                     Note: 2026 RAV4 (hybrid-only) and 2026 CX-5 are full redesigns — new prices sit well above your $20–30K used budget.
                     The value play stays a 2018–2020 used/CPO unit. CPO premiums over regular used are usually small (~2%); take CPO when the gap is under ~$1,500–$2,000.
                   </div>
@@ -643,11 +689,11 @@ export default function CarScore() {
 
         {/* ---------------- ADD / EDIT ---------------- */}
         {tab === "add" && (
-          <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, background: C.panel }}>
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 20, background: T.panel }}>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 4 }}>
               {editId ? "Edit car" : "Quick-mode entry"}
             </div>
-            <div style={{ fontSize: 12.5, color: C.mute, marginBottom: 18 }}>
+            <div style={{ fontSize: 12.5, color: T.mute, marginBottom: 18 }}>
               Enter the 5 quick fields. Reliability, fuel, resale and maintenance auto-fill from the database and feed the score live.
             </div>
 
@@ -678,32 +724,31 @@ export default function CarScore() {
                 </select>
               </div>
               <div style={{ gridColumn: "1 / -1" }}>
-                <label style={labelStyle}>VIN <span style={{ textTransform: "none", color: C.cyanDim }}>(optional)</span></label>
+                <label style={labelStyle}>VIN <span style={{ textTransform: "none", color: T.cyanDim }}>(optional)</span></label>
                 <input type="text" placeholder="JTMBFREVxKD…" value={form.vin} onChange={(e) => setForm({ ...form, vin: e.target.value })} style={{ ...inputStyle, fontFamily: "'JetBrains Mono', monospace", letterSpacing: 0.5 }} />
               </div>
               <div>
-                <label style={labelStyle}>Source <span style={{ textTransform: "none", color: C.cyanDim }}>(optional)</span></label>
+                <label style={labelStyle}>Source <span style={{ textTransform: "none", color: T.cyanDim }}>(optional)</span></label>
                 <input type="text" placeholder="CarGurus / Clutch / dealer" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} style={inputStyle} />
               </div>
               <div>
-                <label style={labelStyle}>Location <span style={{ textTransform: "none", color: C.cyanDim }}>(optional)</span></label>
+                <label style={labelStyle}>Location <span style={{ textTransform: "none", color: T.cyanDim }}>(optional)</span></label>
                 <input type="text" placeholder="Thunder Bay / Winnipeg" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} style={inputStyle} />
               </div>
               <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", paddingTop: 4 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5 }}>
-                  <input type="checkbox" checked={form.cpo} onChange={(e) => setForm({ ...form, cpo: e.target.checked })} style={{ width: 16, height: 16, accentColor: C.cyan }} />
+                  <input type="checkbox" checked={form.cpo} onChange={(e) => setForm({ ...form, cpo: e.target.checked })} style={{ width: 16, height: 16, accentColor: T.cyan }} />
                   Certified Pre-Owned (CPO)
                 </label>
                 {!form.cpo && (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <label style={{ fontSize: 13.5, color: C.mute }}>Warranty left (months):</label>
+                    <label style={{ fontSize: 13.5, color: T.mute }}>Warranty left (months):</label>
                     <input type="number" inputMode="numeric" placeholder="0" value={form.warrantyMonths} onChange={(e) => setForm({ ...form, warrantyMonths: e.target.value })} style={{ ...inputStyle, width: 80, padding: "8px 10px" }} />
                   </div>
                 )}
               </div>
             </div>
 
-            {/* live preview */}
             {form.year && form.price && (() => {
               const preview = scoreCar({
                 model: form.model, year: parseInt(form.year, 10),
@@ -714,11 +759,11 @@ export default function CarScore() {
               });
               const v = verdict(preview.total, preview.overBudget);
               return (
-                <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: C.base, border: `1px solid ${v.color}44`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: 13, color: C.mute }}>Live score preview</div>
+                <div style={{ marginTop: 18, padding: 14, borderRadius: 10, background: T.base, border: `1px solid ${v.color}44`, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 13, color: T.mute }}>Live score preview</div>
                   <div style={{ textAlign: "right" }}>
                     <span style={{ fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 22, color: v.color }}>{preview.total}</span>
-                    <span style={{ color: C.mute, fontSize: 13 }}> / {MAX_SCORE}</span>
+                    <span style={{ color: T.mute, fontSize: 13 }}> / {MAX_SCORE}</span>
                     <span style={{ color: v.color, fontWeight: 600, fontSize: 12, marginLeft: 10 }}>{v.label}</span>
                   </div>
                 </div>
@@ -729,12 +774,12 @@ export default function CarScore() {
               <button onClick={submit} disabled={!form.year || !form.price} style={{
                 padding: "12px 22px", borderRadius: 9, cursor: form.year && form.price ? "pointer" : "not-allowed",
                 fontSize: 14, fontWeight: 700, border: "none", fontFamily: "'Inter', sans-serif",
-                background: form.year && form.price ? C.cyan : C.line, color: form.year && form.price ? C.base : C.mute,
+                background: form.year && form.price ? T.cyan : T.line, color: form.year && form.price ? T.base : T.mute,
               }}>{editId ? "Save changes" : "Add to leaderboard"}</button>
               {editId && (
                 <button onClick={() => { setForm(BLANK_FORM); setEditId(null); setTab("leaderboard"); }} style={{
                   padding: "12px 18px", borderRadius: 9, cursor: "pointer", fontSize: 14, fontWeight: 600,
-                  background: "transparent", color: C.mute, border: `1px solid ${C.line}`, fontFamily: "'Inter', sans-serif",
+                  background: "transparent", color: T.mute, border: `1px solid ${T.line}`, fontFamily: "'Inter', sans-serif",
                 }}>Cancel</button>
               )}
             </div>
@@ -743,33 +788,33 @@ export default function CarScore() {
 
         {/* ---------------- METHOD ---------------- */}
         {tab === "method" && (
-          <div style={{ border: `1px solid ${C.line}`, borderRadius: 12, padding: 20, background: C.panel }}>
+          <div style={{ border: `1px solid ${T.line}`, borderRadius: 12, padding: 20, background: T.panel }}>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 600, fontSize: 17, marginBottom: 6 }}>
               How the score works
             </div>
-            <div style={{ fontSize: 13.5, color: C.mute, lineHeight: 1.65, marginBottom: 18 }}>
+            <div style={{ fontSize: 13.5, color: T.mute, lineHeight: 1.65, marginBottom: 18 }}>
               Each column scores 1–5, multiplied by its weight, then summed. Max is {MAX_SCORE}.
               The three triple-weighted columns (◆) drive the decision — tuned for a first car,
               daily commute plus occasional long drives, and Thunder Bay winters.
-              <span style={{ color: C.frost }}> Value-per-cost is computed live</span> from your price vs a
+              <span style={{ color: T.frost }}> Value-per-cost is computed live</span> from your price vs a
               year-and-km market benchmark, so a great deal scores higher than the same model overpriced.
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {Object.keys(WEIGHTS).sort((a, b) => WEIGHTS[b] - WEIGHTS[a]).map((k) => (
-                <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", borderRadius: 8, background: WEIGHTS[k] === 3 ? "rgba(63,208,224,0.06)" : C.base, border: `1px solid ${WEIGHTS[k] === 3 ? C.cyan + "33" : C.line}` }}>
+                <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 12px", borderRadius: 8, background: WEIGHTS[k] === 3 ? "rgba(63,208,224,0.06)" : T.base, border: `1px solid ${WEIGHTS[k] === 3 ? T.cyan + "33" : T.line}` }}>
                   <span style={{ fontSize: 13.5, fontWeight: WEIGHTS[k] === 3 ? 700 : 500 }}>
-                    {FIELD_LABELS[k]} {WEIGHTS[k] === 3 && <span style={{ color: C.cyan }}>◆</span>}
+                    {FIELD_LABELS[k]} {WEIGHTS[k] === 3 && <span style={{ color: T.cyan }}>◆</span>}
                   </span>
-                  <Pill color={WEIGHTS[k] === 3 ? C.cyan : C.mute}>×{WEIGHTS[k]}</Pill>
+                  <Pill color={WEIGHTS[k] === 3 ? T.cyan : T.mute}>×{WEIGHTS[k]}</Pill>
                 </div>
               ))}
             </div>
             <div style={{ marginTop: 18, display: "flex", gap: 8, flexWrap: "wrap" }}>
-              <Pill color={C.green} bg="rgba(91,216,154,0.10)">≥76% Strong buy</Pill>
-              <Pill color={C.cyan}>64–75% Solid</Pill>
-              <Pill color={C.red} bg="rgba(233,113,113,0.10)">&lt;64% Walk away</Pill>
+              <Pill color={T.green} bg="rgba(91,216,154,0.10)">&ge;76% Strong buy</Pill>
+              <Pill color={T.cyan}>64–75% Solid</Pill>
+              <Pill color={T.red} bg="rgba(233,113,113,0.10)">&lt;64% Walk away</Pill>
             </div>
-            <div style={{ marginTop: 18, fontSize: 12, color: C.mute, lineHeight: 1.6, borderTop: `1px solid ${C.line}`, paddingTop: 14 }}>
+            <div style={{ marginTop: 18, fontSize: 12, color: T.mute, lineHeight: 1.6, borderTop: `1px solid ${T.line}`, paddingTop: 14 }}>
               Database covers the playbook models (RAV4, CX-5, CR-V, Forester, Corolla, Mazda3) plus Hyundai
               (Tucson, Kona, Elantra) in their 2018–2021 used generations. Reliability/maintenance from RepairPal
               &amp; Consumer Reports; fuel from NRCan; resale from Canadian Black Book retention data. Benchmarks are
@@ -779,7 +824,7 @@ export default function CarScore() {
         )}
       </div>
 
-      <div style={{ maxWidth: 920, margin: "0 auto", padding: "8px 20px 30px", fontSize: 11, color: C.cyanDim, textAlign: "center" }}>
+      <div style={{ maxWidth: 920, margin: "0 auto", padding: "8px 20px 30px", fontSize: 11, color: T.cyanDim, textAlign: "center" }}>
         Saved on this device · run <code>npm run scrape</code> to refresh listings from the Thunder Bay dealers
       </div>
     </div>
