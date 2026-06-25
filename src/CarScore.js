@@ -123,7 +123,27 @@ const DB = {
 
 const MODEL_LIST = Object.keys(DB);
 
-const BLANK_FORM = { model: MODEL_LIST[0], year: "", price: "", km: "", drivetrain: "AWD", vin: "", cpo: false, source: "", location: "", warrantyMonths: "" };
+const AUTOTRADER_SLUGS = {
+  "Toyota RAV4": "toyota/rav4", "Mazda CX-5": "mazda/cx-5", "Honda CR-V": "honda/cr-v",
+  "Subaru Forester": "subaru/forester", "Toyota Corolla": "toyota/corolla", "Mazda3": "mazda/3",
+  "Hyundai Tucson": "hyundai/tucson", "Hyundai Kona": "hyundai/kona", "Hyundai Elantra": "hyundai/elantra",
+};
+function fallbackUrl(source, model) {
+  const s = (source || "").toLowerCase();
+  if (s.includes("autotrader")) {
+    const slug = AUTOTRADER_SLUGS[model];
+    return slug ? `https://www.autotrader.ca/cars/${slug}/` : "https://www.autotrader.ca/";
+  }
+  if (s.includes("clutch")) return "https://clutch.ca/cars";
+  if (s.includes("cargurus")) return "https://www.cargurus.ca/";
+  if (s.includes("wayne toyota")) return "https://www.waynetoyota.com/vehicles/used/";
+  if (s.includes("gore motors") || s.includes("gore honda")) return "https://www.goremotorshonda.com/vehicles/used/";
+  if (s.includes("halfway") || s.includes("half-way")) return "https://www.halfwaymotorsmazda.com/vehicles/used/";
+  if (s.includes("superior hyundai")) return "https://www.superiorhyundai.ca/vehicles/used/";
+  return null;
+}
+
+const BLANK_FORM = { model: MODEL_LIST[0], year: "", price: "", km: "", drivetrain: "AWD", vin: "", cpo: false, source: "", location: "", url: "", warrantyMonths: "" };
 
 const BUDGET = 30000;
 
@@ -387,6 +407,7 @@ export default function CarScore() {
       year: parseInt(form.year, 10),
       price: parseInt(String(form.price).replace(/[^\d]/g, ""), 10) || 0,
       km: form.km ? (parseInt(String(form.km).replace(/[^\d]/g, ""), 10) || null) : null,
+      url: form.url || null,
       warrantyMonths: form.warrantyMonths ? (parseInt(form.warrantyMonths, 10) || null) : null,
     };
     setCars((prev) => editId ? prev.map((c) => c.id === editId ? entry : c) : [...prev, entry]);
@@ -399,7 +420,7 @@ export default function CarScore() {
       model: car.model, year: String(car.year), price: String(car.price),
       km: car.km ? String(car.km) : "", drivetrain: car.drivetrain, vin: car.vin || "",
       cpo: !!car.cpo, source: car.source || "", location: car.location || "",
-      warrantyMonths: car.warrantyMonths ? String(car.warrantyMonths) : "",
+      url: car.url || "", warrantyMonths: car.warrantyMonths ? String(car.warrantyMonths) : "",
     });
     setEditId(car.id); setTab("add"); setExpanded(null);
   };
@@ -503,6 +524,7 @@ export default function CarScore() {
                   const isOpen = expanded === car.id;
                   const age = Math.max(1, CURRENT_YEAR - car.year);
                   const kmPerYear = car.km != null ? Math.round(car.km / age) : null;
+                  const listingUrl = car.url || fallbackUrl(car.source, car.model);
                   const kmTag = kmPerYear == null ? null
                     : kmPerYear < 12000
                       ? { label: `${kmPerYear.toLocaleString()} km/yr ✓`, color: T.green }
@@ -532,16 +554,16 @@ export default function CarScore() {
                             {car.cpo && <Pill color={T.gold} bg="rgba(215,178,106,0.12)">CPO</Pill>}
                             <Pill color={car.drivetrain === "AWD" ? T.cyan : T.mute}>{car.drivetrain}</Pill>
                             {car.overBudget && <Pill color={T.amber} bg="rgba(233,185,73,0.12)">OVER $30K</Pill>}
-                            {car.url && (
+                            {listingUrl && (
                               <a
-                                href={car.url}
+                                href={listingUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 onClick={(e) => e.stopPropagation()}
                                 style={{ fontSize: 11.5, color: T.cyan, textDecoration: "none", fontFamily: "'JetBrains Mono', monospace", opacity: 0.85 }}
-                                title="Open source listing"
+                                title={car.url ? "Open source listing" : `Search on ${car.source || "dealer site"}`}
                               >
-                                ↗ listing
+                                ↗ {car.url ? "listing" : "search"}
                               </a>
                             )}
                           </div>
@@ -623,10 +645,10 @@ export default function CarScore() {
                             <div><span style={{ color: T.frost, fontWeight: 600 }}>Engine: </span>{d.engine}</div>
                             <div style={{ marginTop: 4 }}><span style={{ color: T.amber, fontWeight: 600 }}>Watch: </span>{d.problems}</div>
                             {car.note && <div style={{ marginTop: 4 }}><span style={{ color: T.cyan, fontWeight: 600 }}>Listing: </span>{car.trim && car.trim !== "—" ? car.trim + " — " : ""}{car.note}</div>}
-                            {car.url && (
+                            {listingUrl && (
                               <div style={{ marginTop: 6 }}>
-                                <a href={car.url} target="_blank" rel="noopener noreferrer" style={{ color: T.cyan, fontWeight: 600 }}>
-                                  View original listing ↗
+                                <a href={listingUrl} target="_blank" rel="noopener noreferrer" style={{ color: T.cyan, fontWeight: 600 }}>
+                                  {car.url ? "View original listing ↗" : `Search on ${car.source || "source"} ↗`}
                                 </a>
                               </div>
                             )}
@@ -734,6 +756,10 @@ export default function CarScore() {
               <div>
                 <label style={labelStyle}>Location <span style={{ textTransform: "none", color: T.cyanDim }}>(optional)</span></label>
                 <input type="text" placeholder="Thunder Bay / Winnipeg" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} style={inputStyle} />
+              </div>
+              <div style={{ gridColumn: "1 / -1" }}>
+                <label style={labelStyle}>Listing URL <span style={{ textTransform: "none", color: T.cyanDim }}>(optional — paste the dealer/site link)</span></label>
+                <input type="url" placeholder="https://www.autotrader.ca/a/…" value={form.url} onChange={(e) => setForm({ ...form, url: e.target.value })} style={inputStyle} />
               </div>
               <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap", paddingTop: 4 }}>
                 <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13.5 }}>
